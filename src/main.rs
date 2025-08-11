@@ -1,5 +1,6 @@
 use std::{borrow::Cow, sync::Arc};
 
+use wgpu::RenderPipeline;
 use winit::{
     application::ApplicationHandler,
     event::WindowEvent,
@@ -14,6 +15,7 @@ struct State {
     size: winit::dpi::PhysicalSize<u32>,
     surface: wgpu::Surface<'static>,
     surface_format: wgpu::TextureFormat,
+    render_pipeline: RenderPipeline,
 }
 
 impl State {
@@ -78,6 +80,7 @@ impl State {
             size,
             surface,
             surface_format,
+            render_pipeline,
         };
 
         // Configure surface for the first time
@@ -130,7 +133,7 @@ impl State {
         // Renders a GREEN screen
         let mut encoder = self.device.create_command_encoder(&Default::default());
         // Create the renderpass which will clear the screen.
-        let renderpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        let mut renderpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: None,
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: &texture_view,
@@ -146,7 +149,8 @@ impl State {
             occlusion_query_set: None,
         });
 
-        // If you wanted to call any drawing commands, they would go here.
+        renderpass.set_pipeline(&self.render_pipeline);
+        renderpass.draw(0..3, 0..1);
 
         // End the renderpass.
         drop(renderpass);
