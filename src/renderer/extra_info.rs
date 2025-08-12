@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use wgpu::util::DeviceExt;
 
 pub struct ExtraInfo {
@@ -77,8 +79,12 @@ impl ExtraInfo {
         &self.extra_info_bind_group_layout
     }
 
-    pub fn update_time(&self, new_time_secs: f32, queue: &wgpu::Queue) {
-        queue.write_buffer(&self.time_buffer, 0, bytemuck::cast_slice(&[new_time_secs]));
+    pub fn update_time(&self, new_time: Duration, queue: &wgpu::Queue) {
+        queue.write_buffer(
+            &self.time_buffer,
+            0,
+            bytemuck::cast_slice(&[new_time.as_secs_f32()]),
+        );
     }
 
     pub fn update_resolution(

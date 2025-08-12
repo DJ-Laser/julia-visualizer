@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use extra_info::{BindExtraInfo, ExtraInfo};
 use mesh::{DrawMesh, Mesh};
@@ -101,7 +101,7 @@ impl Renderer {
         self.extra_info.update_resolution(size.cast(), &self.queue);
     }
 
-    pub fn render(&mut self) -> wgpu::SurfaceTexture {
+    pub fn render(&mut self, elapsed_time: Duration) -> wgpu::SurfaceTexture {
         // Create texture view
         let surface_texture = self
             .surface
@@ -139,7 +139,10 @@ impl Renderer {
         });
 
         renderpass.set_pipeline(&self.render_pipeline);
+
+        self.extra_info.update_time(elapsed_time, &self.queue);
         renderpass.bind_extra_info(&self.extra_info);
+
         renderpass.draw_mesh(&self.mesh);
 
         // End the renderpass.

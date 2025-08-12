@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 use renderer::Renderer;
 use winit::{
@@ -14,6 +14,7 @@ struct State {
     window: Arc<Window>,
     size: winit::dpi::PhysicalSize<u32>,
     renderer: Renderer,
+    start_instant: Instant,
 }
 
 impl State {
@@ -22,6 +23,7 @@ impl State {
             renderer: Renderer::new(window.clone()).await,
             size: window.inner_size(),
             window,
+            start_instant: Instant::now(),
         };
 
         // Configure surface for the first time
@@ -46,7 +48,7 @@ impl State {
     }
 
     fn render(&mut self) {
-        let surface_texture = self.renderer.render();
+        let surface_texture = self.renderer.render(self.start_instant.elapsed());
         self.window.pre_present_notify();
         surface_texture.present();
     }

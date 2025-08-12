@@ -39,7 +39,7 @@ var<uniform> resolution: vec2f;
 fn fs_main(@builtin(position) fragCoord: vec4f) -> @location(0) vec4f {
   let uv = fragCoord.xy / resolution;
 
-  return vec4f(uv, 0, 1);
+  return vec4f(uv, 0.5 + 0.5 * cos(time), 1);
 }
 
 @vertex
