@@ -1,5 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
+use audio_data::{AudioData, BindAudioData};
 use extra_info::{BindExtraInfo, ExtraInfo};
 use mesh::{DrawMesh, Mesh};
 use wgpu::include_wgsl;
@@ -17,6 +18,7 @@ pub struct Renderer {
   render_pipeline: wgpu::RenderPipeline,
   mesh: Mesh,
   extra_info: ExtraInfo,
+  audio_data: AudioData,
 }
 
 impl Renderer {
@@ -39,10 +41,11 @@ impl Renderer {
     let shader = device.create_shader_module(include_wgsl!("shader.wgsl"));
 
     let extra_info = ExtraInfo::new(&device).await;
+    let audio_data = AudioData::new(&device, 1).await;
 
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
       label: None,
-      bind_group_layouts: &[extra_info.layout()],
+      bind_group_layouts: &[extra_info.layout(), audio_data.layout()],
       push_constant_ranges: &[],
     });
 
@@ -83,10 +86,11 @@ impl Renderer {
       render_pipeline,
       mesh,
       extra_info,
+      audio_data,
     }
   }
 
-  pub fn configure_surface(&self, size: &winit::dpi::PhysicalSize<u32>) {
+  pub fn configure_surface(&mut self, size: &winit::dpi::PhysicalSize<u32>) {
     let surface_config = wgpu::SurfaceConfiguration {
       usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
       format: self.surface_format,
@@ -100,6 +104,7 @@ impl Renderer {
     };
     self.surface.configure(&self.device, &surface_config);
     self.extra_info.update_resolution(size.cast(), &self.queue);
+    self.audio_data.resize(&self.device, size.width as usize);
   }
 
   pub fn render(&mut self, elapsed_time: Duration) -> wgpu::SurfaceTexture {
@@ -142,7 +147,9 @@ impl Renderer {
     renderpass.set_pipeline(&self.render_pipeline);
 
     self.extra_info.update_time(elapsed_time, &self.queue);
-    renderpass.bind_extra_info(&self.extra_info);
+
+    renderpass.bind_extra_info(0, &self.extra_info);
+    renderpass.bind_audio_data(1, &self.audio_data);
 
     renderpass.draw_mesh(&self.mesh);
 
@@ -152,5 +159,10 @@ impl Renderer {
     // Submit the command in the queue to execute
     self.queue.submit([encoder.finish()]);
     surface_texture
+  }
+
+  pub fn update_audio_data(&self, spectrum: Vec<f32>, waveform: Vec<f32>) {
+    self.audio_data.update_spectrum(&spectrum, &self.queue);
+    self.audio_data.update_waveform(&waveform, &self.queue);
   }
 }

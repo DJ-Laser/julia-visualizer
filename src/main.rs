@@ -1,5 +1,6 @@
 use std::{sync::Arc, time::Instant};
 
+use audio::AudioProcessor;
 use renderer::Renderer;
 use winit::{
   application::ApplicationHandler,
@@ -16,19 +17,21 @@ struct State {
   size: winit::dpi::PhysicalSize<u32>,
   renderer: Renderer,
   start_instant: Instant,
+  audio_processor: AudioProcessor,
 }
 
 impl State {
   async fn new(window: Arc<Window>) -> State {
-    let state = State {
+    let mut state = State {
       renderer: Renderer::new(window.clone()).await,
       size: window.inner_size(),
       window,
       start_instant: Instant::now(),
+      audio_processor: AudioProcessor::init(),
     };
 
-    // Configure surface for the first time
     state.configure_surface();
+    state.configure_audio_processor();
 
     state
   }
@@ -37,18 +40,30 @@ impl State {
     &self.window
   }
 
-  fn configure_surface(&self) {
+  fn configure_surface(&mut self) {
     self.renderer.configure_surface(&self.size);
+  }
+
+  fn configure_audio_processor(&mut self) {
+    self
+      .audio_processor
+      .set_resolution(Some(self.size.width as usize));
   }
 
   fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
     self.size = new_size;
 
-    // reconfigure the surface
     self.configure_surface();
+    self.configure_audio_processor();
   }
 
   fn render(&mut self) {
+    let spectrum = self.audio_processor.process_data();
+    if let Some(spectrum) = spectrum {
+      let waveform = self.audio_processor.get_waveform();
+      self.renderer.update_audio_data(spectrum, waveform);
+    }
+
     let surface_texture = self.renderer.render(self.start_instant.elapsed());
     self.window.pre_present_notify();
     surface_texture.present();

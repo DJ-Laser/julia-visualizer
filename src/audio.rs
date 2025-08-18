@@ -13,7 +13,7 @@ pub struct AudioProcessor {
 }
 
 impl AudioProcessor {
-  pub fn init(fft_resolution: usize) -> Self {
+  pub fn init() -> Self {
     let (data_tx, data_rx) = mpsc::channel();
 
     let device = find_output_monitor().unwrap();
@@ -32,7 +32,8 @@ impl AudioProcessor {
 
     let channel_count = stream_config.channels as usize;
     let config = AudioProcessorConfig {
-      fft_resolution,
+      resolution: None,
+      fft_resolution: 1024 * 3,
       sampling_rate: stream_config.sample_rate.0,
       channel_count,
     };
@@ -45,30 +46,21 @@ impl AudioProcessor {
     }
   }
 
-  pub fn process_data(&mut self) -> Option<Vec<Vec<Frequency>>> {
-    let data = self.data_rx.try_recv().unwrap_or(Vec::new());
-
-    for channels in data.chunks_exact(self.config.channel_count) {
-      for (channel_number, sample) in channels.iter().enumerate() {
-        self.channel_buffers[channel_number].push_back(*sample);
-      }
-    }
-
-    for buffer in &mut self.channel_buffers {
-      let excess_elements = buffer.len().saturating_sub(self.config.fft_resolution);
-      buffer.drain(0..excess_elements);
-    }
-
-    self.process_frequencies()
+  pub fn resolution(&self) -> Option<usize> {
+    self.config.resolution
   }
 
-  fn process_frequencies(&mut self) -> Option<Vec<Vec<Frequency>>> {
+  pub fn set_resolution(&mut self, new_resolution: Option<usize>) {
+    self.config.resolution = new_resolution;
+  }
+
+  fn process_frequencies(&mut self) -> Vec<Vec<Frequency>> {
     if self
       .channel_buffers
       .iter()
       .any(|channel_buffer| channel_buffer.len() < self.config.fft_resolution)
     {
-      return None;
+      return Vec::new();
     }
 
     let mut channel_spectrum_buffers = Vec::with_capacity(self.config.channel_count);
@@ -87,7 +79,73 @@ impl AudioProcessor {
       channel_spectrum_buffers.push(audio_data.freq_buffer);
     }
 
-    Some(channel_spectrum_buffers)
+    channel_spectrum_buffers
+  }
+
+  pub fn process_data(&mut self) -> Option<Vec<f32>> {
+    let Ok(data) = self.data_rx.try_recv() else {
+      return None;
+    };
+
+    for channels in data.chunks_exact(self.config.channel_count) {
+      for (channel_number, sample) in channels.iter().enumerate() {
+        self.channel_buffers[channel_number].push_back(*sample);
+      }
+    }
+
+    for buffer in &mut self.channel_buffers {
+      let excess_elements = buffer.len().saturating_sub(self.config.fft_resolution);
+      buffer.drain(0..excess_elements);
+    }
+
+    let frequencies = self.process_frequencies();
+    if frequencies.len() == 0 {
+      return None;
+    }
+
+    let resolution = frequencies[0].len();
+    let mut spectrum = Vec::with_capacity(resolution);
+
+    for index in 0..resolution {
+      let mut average_amplitude = 0.0;
+      for channel in &frequencies {
+        average_amplitude += channel[index].volume;
+      }
+
+      average_amplitude /= frequencies.len() as f32;
+
+      spectrum.push(average_amplitude);
+    }
+
+    Some(spectrum)
+  }
+
+  pub fn get_waveform(&self) -> Vec<f32> {
+    let Some(waveform_len) = self.channel_buffers.iter().map(|buffer| buffer.len()).min() else {
+      return Vec::new();
+    };
+
+    let waveform_buffer_len = self.config.resolution.unwrap_or(waveform_len);
+    let mut waveform_buffer = Vec::with_capacity(waveform_buffer_len);
+
+    let num_samples = if let Some(resolution) = self.config.resolution {
+      waveform_len.min(resolution)
+    } else {
+      waveform_len
+    };
+
+    for index in (waveform_len - num_samples)..waveform_len {
+      let mut average_sample = 0.0;
+      for buffer in &self.channel_buffers {
+        average_sample += buffer[index];
+      }
+
+      average_sample /= self.channel_buffers.len() as f32;
+      waveform_buffer.push(average_sample);
+    }
+
+    waveform_buffer.resize(waveform_buffer_len, 0.0);
+    waveform_buffer
   }
 
   fn handle_stream_error(error: cpal::StreamError) {
@@ -97,6 +155,7 @@ impl AudioProcessor {
 
 struct AudioProcessorConfig {
   fft_resolution: usize,
+  resolution: Option<usize>,
   sampling_rate: u32,
   channel_count: usize,
 }
@@ -105,7 +164,7 @@ impl AudioProcessorConfig {
   fn into_spectrum_processor_config(&self) -> SpectrumProcessorConfig {
     SpectrumProcessorConfig {
       sampling_rate: self.sampling_rate,
-      resolution: None,
+      resolution: self.resolution,
       volume: 1.0,
       ..SpectrumProcessorConfig::default()
     }

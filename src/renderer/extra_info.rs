@@ -99,13 +99,13 @@ impl ExtraInfo {
 }
 
 pub trait BindExtraInfo<'a> {
-  fn bind_extra_info(&mut self, extra_info: &'a ExtraInfo);
+  fn bind_extra_info(&mut self, index: u32, extra_info: &'a ExtraInfo);
 }
 impl<'a, 'b> BindExtraInfo<'b> for wgpu::RenderPass<'a>
 where
   'b: 'a,
 {
-  fn bind_extra_info(&mut self, extra_info: &'b ExtraInfo) {
-    self.set_bind_group(0, &extra_info.extra_info_bind_group, &[]);
+  fn bind_extra_info(&mut self, index: u32, extra_info: &'b ExtraInfo) {
+    self.set_bind_group(index, &extra_info.extra_info_bind_group, &[]);
   }
 }

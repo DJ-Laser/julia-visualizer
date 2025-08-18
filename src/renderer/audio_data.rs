@@ -1,6 +1,4 @@
-use std::time::Duration;
-
-use wgpu::util::DeviceExt;
+use std::mem;
 
 pub struct AudioData {
   spectrum_buffer: wgpu::Buffer,
@@ -10,7 +8,25 @@ pub struct AudioData {
 }
 
 impl AudioData {
-  pub async fn new(device: &wgpu::Device) -> Self {
+  fn create_buffers(device: &wgpu::Device, size: usize) -> (wgpu::Buffer, wgpu::Buffer) {
+    let spectrum_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+      label: Some("Spectrum Buffer"),
+      size: (size * mem::size_of::<f32>()) as u64,
+      usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+      mapped_at_creation: false,
+    });
+
+    let waveform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+      label: Some("Waveform Buffer"),
+      size: (size * mem::size_of::<f32>()) as u64,
+      usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+      mapped_at_creation: false,
+    });
+
+    (spectrum_buffer, waveform_buffer)
+  }
+
+  pub async fn new(device: &wgpu::Device, size: usize) -> Self {
     let audio_data_bind_group_layout =
       device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         entries: &[
@@ -38,17 +54,7 @@ impl AudioData {
         label: Some("fragment_bind_group_layout"),
       });
 
-    let spectrum_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-      label: Some("Spectrum Buffer"),
-      contents: bytemuck::cast_slice(&[0.0f32]),
-      usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-    });
-
-    let waveform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-      label: Some("Waveform Buffer"),
-      contents: bytemuck::cast_slice(&[0.0f32, 0.0f32]),
-      usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-    });
+    let (spectrum_buffer, waveform_buffer) = Self::create_buffers(device, size);
 
     let audio_data_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
       layout: &audio_data_bind_group_layout,
@@ -73,39 +79,33 @@ impl AudioData {
     }
   }
 
+  pub fn resize(&mut self, device: &wgpu::Device, size: usize) {
+    let (spectrum_buffer, waveform_buffer) = Self::create_buffers(device, size);
+    self.spectrum_buffer = spectrum_buffer;
+    self.waveform_buffer = waveform_buffer;
+  }
+
   pub fn layout(&self) -> &wgpu::BindGroupLayout {
     &self.audio_data_bind_group_layout
   }
 
-  pub fn update_time(&self, new_time: Duration, queue: &wgpu::Queue) {
-    queue.write_buffer(
-      &self.spectrum_buffer,
-      0,
-      bytemuck::cast_slice(&[new_time.as_secs_f32()]),
-    );
+  pub fn update_spectrum(&self, spectrum: &[f32], queue: &wgpu::Queue) {
+    queue.write_buffer(&self.spectrum_buffer, 0, bytemuck::cast_slice(&spectrum));
   }
 
-  pub fn update_resolution(
-    &self,
-    new_resolution: winit::dpi::PhysicalSize<f32>,
-    queue: &wgpu::Queue,
-  ) {
-    queue.write_buffer(
-      &self.waveform_buffer,
-      0,
-      bytemuck::cast_slice(&[new_resolution.width, new_resolution.height]),
-    );
+  pub fn update_waveform(&self, waveform: &[f32], queue: &wgpu::Queue) {
+    queue.write_buffer(&self.waveform_buffer, 0, bytemuck::cast_slice(&waveform));
   }
 }
 
-pub trait BindExtraInfo<'a> {
-  fn bind_extra_info(&mut self, extra_info: &'a AudioData);
+pub trait BindAudioData<'a> {
+  fn bind_audio_data(&mut self, index: u32, audio_data: &'a AudioData);
 }
-impl<'a, 'b> BindExtraInfo<'b> for wgpu::RenderPass<'a>
+impl<'a, 'b> BindAudioData<'b> for wgpu::RenderPass<'a>
 where
   'b: 'a,
 {
-  fn bind_extra_info(&mut self, extra_info: &'b AudioData) {
-    self.set_bind_group(0, &extra_info.audio_data_bind_group, &[]);
+  fn bind_audio_data(&mut self, index: u32, audio_data: &'b AudioData) {
+    self.set_bind_group(index, &audio_data.audio_data_bind_group, &[]);
   }
 }
