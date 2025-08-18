@@ -5,6 +5,7 @@ use mesh::{DrawMesh, Mesh};
 use wgpu::include_wgsl;
 use winit::window::Window;
 
+mod audio_data;
 mod extra_info;
 mod mesh;
 
